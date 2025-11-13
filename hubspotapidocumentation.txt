@@ -1,0 +1,153 @@
+HubSpot POST API Reference
+=========================
+
+Use `https://api.hubapi.com` as the base URL and send `Authorization: Bearer <access_token>` plus the required `Content-Type` header (JSON unless noted). The sections below contain only POST endpoints, example payloads, and AI usage rules needed for Codex interactions.
+
+Authentication (OAuth v1)
+------------------------
+- `POST /oauth/v1/token` to exchange the authorization code for access + refresh tokens.
+  ```bash
+  curl --request POST https://api.hubapi.com/oauth/v1/token \
+    --header 'content-type: application/x-www-form-urlencoded' \
+    --data 'grant_type=authorization_code&code=AUTH_CODE&redirect_uri=REDIRECT&client_id=APP_ID&client_secret=APP_SECRET'
+  ```
+- Refresh tokens by calling the same endpoint with `grant_type=refresh_token`, `refresh_token`, `client_id`, `client_secret`.
+- Responses contain `access_token`, `refresh_token`, `expires_in`, `token_type`.
+
+CMS Blog Posts
+--------------
+- Create a blog post draft or publish-ready content: `POST /cms/v3/blogs/posts`
+  ```json
+  {
+    "name": "Example blog post",
+    "contentGroupId": "184993428780",
+    "slug": "slug-at-the-end-of-the-url",
+    "blogAuthorId": "4183274253",
+    "metaDescription": "Meta description.",
+    "useFeaturedImage": false,
+    "postBody": "<p>Welcome!</p>"
+  }
+  
+  ```
+- Publish an updated draft without a payload: `POST /cms/v3/blogs/posts/{postId}/draft/push-live`.
+- Schedule publication: `POST /cms/v3/blogs/posts/schedule` with `{ "id": "<postId>", "publishDate": "2025-09-01T12:00:00Z" }`.
+- Reset draft to match the live version: `POST /cms/v3/blogs/posts/{postId}/draft/reset`.
+- Multi-language:
+  - Clone to a new language: `POST /cms/v3/blogs/posts/multi-language/create-language-variant` with `{ "id": "<postId>", "language": "fr" }`.
+  - Attach to a language group: `POST /cms/v3/blogs/posts/multi-language/attach-to-lang-group` with `{ "id": "<postId>", "language": "fr", "primaryId": "<groupPrimaryId>" }`.
+  - Detach from group: `POST /cms/v3/blogs/posts/multi-language/detach-from-lang-group` with `{ "id": "<postId>" }`.
+
+Conversations Inbox Messages
+----------------------------
+- Add internal comments: `POST /conversations/v3/conversations/threads/{threadId}/messages` with `type: "COMMENT"`.
+  ```json
+  { "type": "COMMENT", "text": "Can you follow up?", "richText": "<p>Can you follow up?</p>" }
+  ```
+- Send outbound replies (email, chat, FB Messenger, etc.) through the same endpoint using `type: "MESSAGE"` plus recipients.
+  ```json
+  {
+    "type": "MESSAGE",
+    "text": "Hey there, following up",
+    "recipients": [
+      {
+        "actorId": "E-user@hubspot.com",
+        "name": "Leslie Knope",
+        "recipientField": "TO",
+        "deliveryIdentifiers": [{ "type": "HS_EMAIL_ADDRESS", "value": "lknope@hubspot.com" }]
+      }
+    ],
+    "senderActorId": "A-3892666",
+    "channelId": "1002",
+    "channelAccountId": "42423411",
+    "subject": "Follow up"
+  }
+  ```
+- Attachments accept HubSpot Files URLs via `{ "fileId": "https://..." }`. Quick replies are arrays of `{ "label", "value", "valueType" }` objects.
+
+CRM Objects & Search
+--------------------
+- Create CRM records: `POST /crm/v3/objects/{objectTypeId}` with a `properties` object (contacts `0-1`, companies `0-2`, deals `0-3`, tickets `0-5`, etc.).
+- Create custom properties: `POST /crm/v3/properties/{objectTypeId}` providing metadata (`name`, `label`, `type`, `fieldType`, etc.).
+- Search records and activities: `POST /crm/v3/objects/{objectTypeId}/search` with `filterGroups`, optional `properties`, `limit`, and `sort`.
+
+Commerce Payments
+-----------------
+- Track offline/external payments: `POST /crm/v3/objects/commerce_payments`.
+  ```json
+  {
+    "properties": {
+      "hs_initial_amount": "99.99",
+      "hs_initiated_date": "2024-03-27T18:04:11.823Z",
+      "hs_customer_email": "customer@example.com"
+    },
+    "associations": [
+      {
+        "to": { "id": 70791348501 },
+        "types": [{ "associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 387 }]
+      }
+    ]
+  }
+  ```
+- Filter payments: `POST /crm/v3/objects/commerce_payments/search`.
+  ```json
+  {
+    "filterGroups": [
+      { "filters": [{ "propertyName": "hs_latest_status", "value": "refunded", "operator": "EQ" }] }
+    ],
+    "properties": ["hs_latest_status", "hs_customer_email"]
+  }
+  ```
+
+Webhooks & Snapshots
+--------------------
+- Manage subscriptions: `POST /webhooks/v4/subscriptions` with `objectTypeId`, `subscriptionType` (`OBJECT`, `ASSOCIATION`, or `APP_LIFECYCLE_EVENT`), `portalId`, `actions`, optional `properties`, `objectIds`, `associatedObjectTypeIds`.
+- Lifecycle events (installs/uninstalls): same endpoint with `{ "subscriptionType": "APP_LIFECYCLE_EVENT", "eventTypeId": "4-1909196" }` (use `4-1916193` for uninstall events).
+- Trigger CRM snapshots: `POST /webhooks/v4/snapshots/crm` supplying `snapshotRequests` list.
+  ```json
+  {
+    "snapshotRequests": [
+      {
+        "portalId": 12345,
+        "objectId": 1001,
+        "objectTypeId": "0-1",
+        "properties": ["email", "firstname", "lastname", "phone"]
+      },
+      {
+        "portalId": 12345,
+        "objectId": 1002,
+        "objectTypeId": "0-1",
+        "properties": ["email", "company"]
+      }
+    ]
+  }
+  ```
+
+Transactional Email
+-------------------
+- Generate SMTP credentials: `POST /marketing/v3/transactional/smtp-tokens/` with `{ "createContact": true, "campaignName": "order-confirmations" }`.
+- Reset SMTP password: `POST /marketing/v3/transactional/smtp-tokens/{tokenId}/password-reset`.
+- Send Single-Send emails: `POST /marketing/v3/transactional/single-email/send` using HubSpot `emailId`, `message`, plus optional `contactProperties` (writes to CRM) and `customProperties` (template variables, arrays allowed for programmable email).
+  ```json
+  {
+    "emailId": 4126643121,
+    "message": { "to": "jdoe@hubspot.com", "sendId": "receipt-123" },
+    "contactProperties": { "firstname": "Jane", "last_paid_date": "2024-03-01" },
+    "customProperties": { "purchaseUrl": "https://example.com/receipt", "productName": "Vanilla" }
+  }
+  ```
+
+Feature Flags for App Cards
+---------------------------
+- Set portal-specific states: `POST /feature-flags/v3/{appId}/flags/hs-release-app-cards/portals/batch/upsert` with `portalStates` array.
+  ```json
+  { "portalStates": [ { "portalId": 1234, "flagState": "ON" }, { "portalId": 4567, "flagState": "OFF" } ] }
+  ```
+- Remove overrides: `POST /feature-flags/v3/{appId}/flags/hs-release-app-cards/portals/batch/delete` with `{ "portalIds": [1234, 4567] }`.
+- Hide legacy CRM cards with the same pattern using `hs-hide-crm-cards`.
+
+AI Usage Guardrails
+-------------------
+- Always state the exact POST endpoint, HTTP method, and base URL; explicitly mention headers (`Authorization`, `Content-Type`).
+- Supply every required field for each payload so Codex can construct valid requests without guessing; reuse IDs returned by prior calls when chaining operations.
+- Keep secrets (`client_secret`, `refresh_token`, SMTP token passwords) out of logs and examples.
+- Remove stray "Ask AI" or UI instructions when giving prompts; stick to concrete API steps so the assistant doesn\'t hallucinate extra behavior.
